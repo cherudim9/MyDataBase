@@ -30,6 +30,10 @@ RC RID::GetSlotNum(int &slot_number)const{
   return OK;
 }
 
+bool RID::Valid()const{
+  return slot_number>=0 && page_number>=0;
+}
+
 //-------------------------------[RID]-----------------------------------
 
 //-------------------------------[RM_RECORD]-----------------------------------
@@ -38,7 +42,7 @@ RM_Record::RM_Record(){
 
 }
 
-RM_Record::RM_Record(char *pData, const RID &rid){
+RM_Record::RM_Record(Byte *pData, const RID &rid){
   this->mem=pData;
   this->rid=rid;
 }
@@ -47,14 +51,14 @@ RM_Record::~RM_Record(){
 
 }
 
-RC RM_Record::GetData(char *&pData)const{
+RC RM_Record::GetData(Byte *&pData)const{
   pData=this->mem;
   return OK;
 }
 
 RC RM_Record::GetRid(RID &rid)const{
   rid=this->rid;
-  if (rid.page_number<0 || rid.slot_number<0)
+  if (!rid.Valid())
     return NO_RID_IN_RECORD;
   return OK;
 }
@@ -88,12 +92,18 @@ RC RM_FileHandle::_ExpandPages(){
   return OK;
 }
 
-RC RM_FileHandle::GetRec(const RID &rid, RM_Record &rec)const{
-  int page_number=rid.GetPageNum();
-  int slot_number=rid.GetSlotNum();
+RC RM_FileHandle::GetRec(const RID &rid, RM_Record &rec){
+  int page_number;
+  int slot_number;
+  RC ret=rid.GetPageNum(page_number);
+  if (ret!=OK)
+    return ret;
+  ret=rid.GetSlotNum(slot_number);
+  if (ret!=OK)
+    return ret;
   
   PF_PageHandle page_handle;
-  RC ret=pf_file_handle.GetThisPage(page_number, page_handle);
+  ret=pf_file_handle.GetThisPage(page_number, page_handle);
   if (ret!=OK)
     return ret;
   
@@ -102,7 +112,7 @@ RC RM_FileHandle::GetRec(const RID &rid, RM_Record &rec)const{
   
   mem+=96+record_size*slot_number;
   
-  rec=RM_Record(mem, record_size);
+  rec=RM_Record(mem, RID(page_number, slot_number));
 
   return OK;
 }
@@ -110,9 +120,17 @@ RC RM_FileHandle::GetRec(const RID &rid, RM_Record &rec)const{
 RC RM_FileHandle::UpdateRec(const RM_Record &rec){
   RID rid;
   RC ret=rec.GetRid(rid);
+  if (ret!=OK)
+    return ret;
   
-  int page_number=rid.GetPageNum();
-  int slot_number=rid.GetSlotNum();
+  int page_number;
+  int slot_number;
+  ret=rid.GetPageNum(page_number);
+  if (ret!=OK)
+    return ret;
+  ret=rid.GetSlotNum(slot_number);
+  if (ret!=OK)
+    return ret;
   
   PF_PageHandle page_handle;
   ret=pf_file_handle.GetThisPage(page_number, page_handle);
@@ -132,7 +150,7 @@ RC RM_FileHandle::UpdateRec(const RM_Record &rec){
   return OK;
 }
 
-RC RM_FileHandle::ForcePages(int page_number)const{
+RC RM_FileHandle::ForcePages(int page_number){
   return pf_file_handle.ForcePages(page_number);
 }
 
@@ -186,11 +204,17 @@ RC RM_FileHandle::InsertRec(const char *pData, RID &rid){
 }
 
 RC RM_FileHandle::DeleteRec(const RID &rid){
-  int page_number=rid.GetPageNum();
-  int slot_number=rid.GetSlotNum();
+  int page_number;
+  int slot_number;
+  RC ret=rid.GetPageNum(page_number);
+  if (ret!=OK)
+    return ret;
+  ret=rid.GetSlotNum(slot_number);
+  if (ret!=OK)
+    return ret;
   
   PF_PageHandle pf_page_handle;
-  RC ret=pf_file_handle.GetThisPage(page_number, pf_page_handle);
+  ret=pf_file_handle.GetThisPage(page_number, pf_page_handle);
   if (ret!=OK)
     return ret;
   Byte *mem;
@@ -200,8 +224,8 @@ RC RM_FileHandle::DeleteRec(const RID &rid){
   Byte *p=mem+(8<<10);
   for(int i=0; ; ){
     p--;
-    if (slot>=i && slot<i+8){
-      int np=p+(1<<(slot-i));
+    if (slot_number>=i && slot_number<i+8){
+      int np=*p+(1<<(slot_number-i));
       memcpy(p, &np, 1);
       break;
     }else
@@ -211,8 +235,6 @@ RC RM_FileHandle::DeleteRec(const RID &rid){
   total_record++;
   avail_spaces[page_number]--;
   
-  rid=RID(page_number, slot);
-  
   return OK;
 }
 
@@ -221,22 +243,22 @@ RC RM_FileHandle::DeleteRec(const RID &rid){
 
 //-------------------------------[RM_MANAGER]-----------------------------------
 
-RM_MANAGER::RM_MANAGER(PF_Manager &pfm2)
+RM_Manager::RM_Manager(PF_Manager &pfm2)
   :pfm(pfm2){
 
 }
 
-RM_MANAGER::~RM_MANAGER(){
+RM_Manager::~RM_Manager(){
 
 }
 
-RC RM_MANAGER::CreateFile(const char *fileName, int record_size){
+RC RM_Manager::CreateFile(const char *fileName, int record_size){
   if (record_size> (8<<10)-96-10)
     return TOO_LONG_RECORD;
   RC ret=pfm.CreateFile(fileName);
   if (ret!=OK)
     return ret;
-  PF_PageHandle pf_file_handle;
+  PF_FileHandle pf_file_handle;
   pfm.OpenFile(fileName, pf_file_handle);
 
   //allocate header page
@@ -263,14 +285,16 @@ RC RM_MANAGER::CreateFile(const char *fileName, int record_size){
 
   pf_file_handle.MarkDirty(0);
   pfm.CloseFile(pf_file_handle);
+
+  return OK;
 }
 
-RC RM_MANAGER::DestroyFile(const char *fileName){
+RC RM_Manager::DestroyFile(const char *fileName){
   //to be constructed
   return OK;
 }
 
-RC RM_MANAGER::OpenFile(const char *fileName, RM_FileHandle &rm_file_handle){
+RC RM_Manager::OpenFile(const char *fileName, RM_FileHandle &rm_file_handle){
   PF_FileHandle pf_file_handle;
   RC ret=pfm.OpenFile(fileName, pf_file_handle);
   if (ret!=OK)
@@ -308,12 +332,14 @@ RC RM_MANAGER::OpenFile(const char *fileName, RM_FileHandle &rm_file_handle){
   return OK;
 }
 
-RC RM_MANAGER::CloseFile(RM_FileHandle &rm_file_handle){
-  PF_PageHandle pf_file_handle;
-  pfm.OpenFile(fileName, pf_file_handle);
+RC RM_Manager::CloseFile(RM_FileHandle &rm_file_handle){
+  PF_FileHandle pf_file_handle=rm_file_handle.GetPFFileHandle();
 
   //allocate header page
-  PF_PageHandle pf_page_handle=rm_file_handle.GetPFFileHandle();
+  PF_PageHandle pf_page_handle;
+  RC ret=pf_file_handle.GetFirstPage(pf_page_handle);
+  if (ret!=OK)
+    return ret;
   
   //Get data address of the header page
   Byte *mem;
@@ -324,22 +350,24 @@ RC RM_MANAGER::CloseFile(RM_FileHandle &rm_file_handle){
   memcpy(mem, &x, sizeof(x));
   mem+=sizeof(x);
 
-  int x=rm_file_handle.GetMaxRecordOnPage();
+  x=rm_file_handle.GetMaxRecordOnPage();
   memcpy(mem, &x, sizeof(x));
   mem+=sizeof(x);
 
-  int x=rm_file_handle.GetTotalRecord();
+  x=rm_file_handle.GetTotalRecord();
   memcpy(mem, &x, sizeof(x));
   mem+=sizeof(x);
 
-  for(int i=0; i<pf_page_handle.GetTotalPage(); i++){
-    int x=rm_page_handle.GetAvailSpaces(i);
+  for(int i=0; i<pf_file_handle.GetTotalPage(); i++){
+    x=rm_file_handle.GetAvailSpaces(i);
     memcpy(mem, &x, sizeof(x));
     mem+=sizeof(x);
   }
   
   pf_file_handle.MarkDirty(0);
   pfm.CloseFile(pf_file_handle);
+
+  return OK;
 }
 
 //-------------------------------[RM_MANAGER]-----------------------------------

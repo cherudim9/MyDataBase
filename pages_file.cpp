@@ -4,6 +4,11 @@ using namespace std;
 
 //--------------------------[PF_PAGEHANDLE]----------------------------------
 
+PF_PageHandle::PF_PageHandle(){
+  this->mem=mem;
+  this->page_number=-1;
+}
+
 PF_PageHandle::PF_PageHandle(Byte *mem, int page_number){
   this->mem=mem;
   this->page_number=page_number;
@@ -26,11 +31,15 @@ PF_PageHandle& PF_PageHandle::operator= (const PF_PageHandle &page_handle){
 
 RC PF_PageHandle::GetData(Byte *& pData)const{
   pData=this->mem;
+  if (pData==0)
+    return NO_DATA_IN_PAGE;
   return OK;
 }
 
 RC PF_PageHandle::GetPageNum(int &page_number)const{
   page_number=this->page_number;
+  if (page_number<0)
+    return NO_PAGE_IN_PAGE;
   return OK;
 }
 
@@ -57,6 +66,11 @@ void PF_FileHandle::_InitPages(){
     total_page++;
     fseek(f, (8<<10), SEEK_CUR);
   }
+}
+
+PF_FileHandle::PF_FileHandle(){
+  this->f=0;
+  this->file_id=-1;
 }
 
 PF_FileHandle::PF_FileHandle(FILE *f, int file_id, const PF_BufferManager &buffer_manager2)

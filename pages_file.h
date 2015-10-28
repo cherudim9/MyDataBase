@@ -12,6 +12,8 @@ class PF_PageHandle {
 
  public:
 
+  PF_PageHandle();
+
   PF_PageHandle  (Byte *mem, int page_number);
 
   ~PF_PageHandle ();                          // Destructor
@@ -130,6 +132,8 @@ class PF_FileHandle {
   int GetTotalPage()const{
     return total_page;
   }
+
+  PF_FileHandle();
 
   PF_FileHandle  (FILE *f, int f_id, const PF_BufferManager &buffer_manager2);                                  // Default constructor
 

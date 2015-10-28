@@ -1,6 +1,6 @@
 #ifndef RECORD_MANAGER_H
 #define RECORD_MANAGER_H
-#include "paged_file.h"
+#include "pages_file.h"
 
 
 void RM_PrintError (RC rc);
@@ -16,7 +16,7 @@ class RID {
   ~RID       ();         
   
   //This method should construct a new record identifier object from a given page number and slot number.
-  RID        (PageNum pageNum, SlotNum slotNum);
+  RID        (int pageNum, int slotNum);
 
   //For this and the following method, it should be a (positive) error if the RID object for which the 
   //method is called is not a viable record identifier. (For example, a RID object will not be a viable 
@@ -25,14 +25,16 @@ class RID {
   RC GetPageNum (int &pageNum) const;  // Return page number
 
   RC GetSlotNum (int &slotNum) const;  // Return slot number
+
+  bool Valid()const;
 };
 
 class RM_Record {
-  char *mem;
+  Byte *mem;
   RID rid;
  public:
   RM_Record  (); 
-  RM_Record(char *pData, const RID &rid);
+  RM_Record(Byte *pData, const RID &rid);
   ~RM_Record (); 
 
   //For this and the following method, it should be a (positive) error if a
@@ -40,7 +42,7 @@ class RM_Record {
   //called. This method provides access to the contents (data) of the record. If the 
   //method succeeds, pData should point to the contents of the copy of the record 
   //created by RM_FileHandle::GetRec() or RM_FileScan::GetNextRec().
-  RC GetData    (char *&pData) const;   
+  RC GetData    (Byte *&pData) const;   
 
   RC GetRid     (RID &rid) const;  
 };
@@ -80,7 +82,7 @@ class RM_FileHandle {
     return pf_file_handle;
   }
 
-  RM_FileHandle  (int, int, int, int *, PF_FileHandle);      
+  RM_FileHandle  (const int, const int, const int, int *, const PF_FileHandle&);      
 
   ~RM_FileHandle ();      
 
@@ -90,7 +92,7 @@ class RM_FileHandle {
   //if rid does not identify an existing record in the file. If the method succeeds, rec
   //should contain a copy of the specified record along with its record identifier 
   //(see the RM_Record class description below).
-  RC GetRec         (const RID &rid, RM_Record &rec) const;
+  RC GetRec         (const RID &rid, RM_Record &rec) ;
 
   //This method should insert the data pointed to by pData as a new record in the file. 
   //If successful, the return parameter &rid should point to the record identifier of the
@@ -110,7 +112,7 @@ class RM_FileHandle {
 
   //This method should call the corresponding method PF_FileHandle::ForcePages in order
   //to copy the contents of one or all dirty pages of the file from the buffer pool to disk.
-  RC ForcePages     (int pageNum = ALL_PAGES) const;
+  RC ForcePages     (int pageNum = ALL_PAGES) ;
 };
 
 class RM_Manager {
