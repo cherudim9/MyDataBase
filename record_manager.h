@@ -45,6 +45,8 @@ class RM_Record {
   RC GetData    (Byte *&pData) const;   
 
   RC GetRid     (RID &rid) const;  
+
+  bool Valid()const;
 };
 
 
@@ -76,6 +78,10 @@ class RM_FileHandle {
   int GetAvailSpaces(int i)const{
     assert(i>=0 && i<pf_file_handle.GetTotalPage());
     return avail_spaces[i];
+  }
+
+  int GetTotalPage()const{
+    return pf_file_handle.GetTotalPage();
   }
 
   PF_FileHandle GetPFFileHandle()const{
@@ -113,6 +119,69 @@ class RM_FileHandle {
   //This method should call the corresponding method PF_FileHandle::ForcePages in order
   //to copy the contents of one or all dirty pages of the file from the buffer pool to disk.
   RC ForcePages     (int pageNum = ALL_PAGES) ;
+
+  bool IsValidSlot(const int page_number, const int slot_number);
+};
+
+class RM_FileScan {
+
+  RM_FileHandle &rm_file_handle;
+  AttrType attr_type;
+  int attr_length;
+  int attr_offset;
+  CompOp comp_op;
+  void *value;
+
+  int current_page;
+  int current_slot;
+
+  bool _Validate(const int op1, const int op2)const;
+  bool _Validate(const float op1, const float op2)const;
+  bool _Validate(const std::string &op1, const std::string &op2)const;
+
+ public:             
+
+  //This method should initialize a scan over the records in the open file referred to by
+  //parameter fileHandle. During the scan, only those records whose specified attribute 
+  //satisfies the specified condition (a comparison with a value) should be retrieved. 
+  //If value is a null pointer, then there is no condition and all records are retrieved
+  //during the scan. If value is not a null pointer, then value points to the value that
+  //attributes are to be compared with.
+  //----
+  //Parameters attrType and attrLength indicate the type and length of the attribute being
+  //compared.
+  //--
+  // Type AttrType is defined in redbase.h as follows: INT for integer, FLOAT for floating 
+  //point number, and STRING for character string. You will need to cast the value into the 
+  //appropriate type for the attribute (or, in the case of an integer or float, copy it into
+  //a separate variable to avoid alignment problems). If a character string has length n,
+  //then the attribute and the value will each be exactly n bytes long. They will not be 
+  //<= n bytes, i.e., no "padding" is required, and they are not null-terminated.
+  //--
+  //Parameter attrOffset indicates where the attribute is found within the contents of 
+  //each record.
+  //--
+  //Parameter compOp indicates the way that the record's attribute value should be compared
+  //with the value parameter. 
+  RM_FileScan     (RM_FileHandle &fileHandle, 
+		   AttrType      attrType,
+		   int           attrLength,
+		   int           attrOffset,
+		   CompOp        compOp,
+		   void          *value,
+		   ClientHint    pinHint = NO_HINT);                          
+  ~RM_FileScan ();  
+
+  //This method should retrieve a copy of the next record in the file scan that satisfies
+  //the scan condition. If this method succeeds, rec should contain a copy of the record
+  //along with its record identifier. This method should return RM_EOF (which you should 
+  //define) if there are no records left satisfying the scan condition. You may assume 
+  //that RM component clients will not close the corresponding open file instance while a
+  //scan is underway.
+  RC GetNextRec   (RM_Record &rec);       
+
+  //This method should terminate the file scan.           
+  RC CloseScan    ();                                
 };
 
 class RM_Manager {

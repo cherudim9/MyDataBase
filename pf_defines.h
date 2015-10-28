@@ -4,9 +4,12 @@
 #include <string>
 #include <utility>
 #include <unordered_map>
+#include <cstring>
 #include <vector>
 #include <map>
 #include <cassert>
+
+#define EPS (1e-8)
 
 enum RC{
   OK,
@@ -24,7 +27,28 @@ enum RC{
   NO_SLOT_IN_RID,
   NO_RID_IN_RECORD,
   NO_PAGE_IN_PAGE,
-  NO_DATA_IN_PAGE
+  NO_DATA_IN_PAGE,
+  NOT_FOUND
+};
+
+enum AttrType{
+  INT,
+  FLOAT,
+  STRING
+};
+
+enum CompOp{
+  NO_OP,
+  EQ_OP,
+  LT_OP,
+  GT_OP,
+  LE_OP,
+  GE_OP,
+  NE_OP
+};
+
+enum ClientHint{
+  NO_HINT
 };
 
 #define ALL_PAGES -1

@@ -63,6 +63,10 @@ RC RM_Record::GetRid(RID &rid)const{
   return OK;
 }
 
+bool RM_Record::Valid()const{
+  return rid.Valid();
+}
+
 //-------------------------------[RM_RECORD]-----------------------------------
 
 
@@ -101,6 +105,11 @@ RC RM_FileHandle::GetRec(const RID &rid, RM_Record &rec){
   ret=rid.GetSlotNum(slot_number);
   if (ret!=OK)
     return ret;
+
+  if (!IsValidSlot(page_number, slot_number)){
+    rec=RM_Record();
+    return OK;
+  }
   
   PF_PageHandle page_handle;
   ret=pf_file_handle.GetThisPage(page_number, page_handle);
@@ -109,7 +118,7 @@ RC RM_FileHandle::GetRec(const RID &rid, RM_Record &rec){
   
   Byte *mem;
   ret=page_handle.GetData(mem);
-  
+
   mem+=96+record_size*slot_number;
   
   rec=RM_Record(mem, RID(page_number, slot_number));
@@ -156,7 +165,8 @@ RC RM_FileHandle::ForcePages(int page_number){
 
 RC RM_FileHandle::InsertRec(const char *pData, RID &rid){
   int page_number=-1;
-  for(int i=0; i<pf_file_handle.GetTotalPage(); i++)
+  //don't insert into the first page; it's the header page
+  for(int i=1; i<pf_file_handle.GetTotalPage(); i++)
     if (avail_spaces[i]!=0){
       page_number=i;
       break;
@@ -238,7 +248,185 @@ RC RM_FileHandle::DeleteRec(const RID &rid){
   return OK;
 }
 
+bool RM_FileHandle::IsValidSlot(const int page_number, const int slot_number){
+  PF_PageHandle pf_page_handle;
+  pf_file_handle.GetThisPage(page_number, pf_page_handle);
+  Byte *mem;
+  pf_page_handle.GetData(mem);
+  mem+=96+(8<<10);
+  mem-=(slot_number/8)+1;
+  int x=slot_number%8;
+  return ((*mem)>>x&1)==1;
+}
+
 //-------------------------------[RM_FILEHANDLE]-----------------------------------
+
+
+//-------------------------------[RM_FILESCAN]-----------------------------------
+
+RM_FileScan::RM_FileScan(RM_FileHandle &rm_file_handle2,
+            AttrType attr_type,
+            int attr_length,
+            int attr_offset,
+            CompOp comp_op,
+            void *value,
+            ClientHint pinHint)
+  :rm_file_handle(rm_file_handle2){
+  this->attr_type=attr_type;
+  this->attr_length=attr_length;
+  this->attr_offset=attr_offset;
+  this->comp_op=comp_op;
+  this->value=value;
+
+  this->current_page=1;
+  this->current_slot=0;
+}
+
+RM_FileScan::~RM_FileScan(){
+  
+}
+
+bool RM_FileScan::_Validate(const int op1, const int op2)const{
+  switch(comp_op){
+  case EQ_OP:
+    return op1 == op2;
+    break;
+  case LT_OP:
+    return op1 < op2;
+    break;
+  case GT_OP:
+    return op1>op2;
+    break;
+  case LE_OP:
+    return op1<=op2;
+    break;
+  case GE_OP:
+    return op1>=op2;
+    break;
+  case NE_OP:
+    return op1!=op2;
+    break;
+  default:
+    ;
+  }
+  return 0;
+}
+
+bool RM_FileScan::_Validate(const std::string &op1, const std::string &op2)const{
+  switch(comp_op){
+  case EQ_OP:
+    return op1 == op2;
+    break;
+  case LT_OP:
+    return op1 < op2;
+    break;
+  case GT_OP:
+    return op1>op2;
+    break;
+  case LE_OP:
+    return op1<=op2;
+    break;
+  case GE_OP:
+    return op1>=op2;
+    break;
+  case NE_OP:
+    return op1!=op2;
+    break;
+  default:
+    ;
+  }
+  return 0;
+}
+
+bool RM_FileScan::_Validate(const float op1, const float op2)const{
+  float d=op1-op2;
+  switch(comp_op){
+  case EQ_OP:
+    return d<EPS && d>-EPS;
+    break;
+  case LT_OP:
+    return d<-EPS;
+    break;
+  case GT_OP:
+    return d>EPS;
+    break;
+  case LE_OP:
+    return d<EPS;
+    break;
+  case GE_OP:
+    return d>-EPS;
+    break;
+  case NE_OP:
+    return d>EPS || d<-EPS;
+    break;
+  default:
+    ;
+  }
+  return 0;
+}
+
+RC RM_FileScan::GetNextRec(RM_Record &rec){
+  rec=RM_Record();//null
+  while(1){
+    if (this->current_slot>=rm_file_handle.GetMaxRecordOnPage()){
+      this->current_slot=0;
+      this->current_page++;
+    }
+    if (this->current_page>=rm_file_handle.GetTotalPage())
+      break;
+
+    if (!rm_file_handle.IsValidSlot(this->current_page, this->current_slot)){
+      this->current_slot++;
+      continue;
+    }
+    
+    RC ret=rm_file_handle.GetRec(RID(this->current_page, this->current_slot), rec);
+    bool flag=false;
+    if (ret==OK){
+      Byte *mem;
+      RC ret=rec.GetData(mem);
+      switch(attr_type){
+      case INT:
+        {
+          int op1;
+          memcpy(&op1, mem+attr_offset, attr_length);
+          int op2=*(int*)value;
+          if (_Validate(op1,op2))
+            flag=true;
+          break;
+        }
+
+      case FLOAT:
+        {
+          float op1_f;
+          memcpy(&op1_f, mem+attr_offset, attr_length);
+          float op2_f=*(float*)value;
+          if (_Validate(op1_f, op2_f))
+            flag=true;
+          break;
+        }
+
+      case STRING:
+        if (_Validate(std::string((char*)(mem+attr_offset), attr_length), std::string((char*)value, attr_length)))
+          flag=true;
+        break;
+
+      default:
+        ;
+      }
+    }
+    
+    this->current_slot++;
+  }
+  rec=RM_Record();
+  return NOT_FOUND;
+}
+
+RC RM_FileScan::CloseScan(){
+  return OK;
+}
+
+//-------------------------------[RM_FILESCAN]-----------------------------------
 
 
 //-------------------------------[RM_MANAGER]-----------------------------------
