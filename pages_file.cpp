@@ -48,21 +48,19 @@ RC PF_PageHandle::GetPageNum(int &page_number)const{
 
 //--------------------------[PF_FILEHANDLE]----------------------------------
 
-int CheckPageExistence(FILE *f){
+bool CheckPageExistence(FILE *f){
   Byte c[3];
   int ret=fread(c,1,1,f);
   if (ret==0)
-    return -1;//EOF
-  if(c[0]!=(Byte)0)
-    return 0;//NOT AVAILABLE
+    return false;//EOF
   fseek(f, -1, SEEK_CUR);
-  return 1;//AVAILABLE
+  return true;//AVAILABLE
 }
 
 void PF_FileHandle::_InitPages(){
   total_page=0;
   fseek(f, 0, SEEK_SET);
-  while(CheckPageExistence(f)>=0){
+  while(CheckPageExistence(f)){
     total_page++;
     fseek(f, (8<<10), SEEK_CUR);
   }
@@ -103,7 +101,7 @@ FILE* PF_FileHandle::getF(){
 }
 
 RC PF_FileHandle::LoadPageWithCurrentPosition(PF_PageHandle &page_handle, int page_num){
-  if (CheckPageExistence(f) == 1){
+  if (CheckPageExistence(f)){
     //the current page is ok
     Byte *mem;
     RC ret=buffer_manager.AddPage(f, file_id, page_num, mem);
@@ -118,22 +116,12 @@ RC PF_FileHandle::LoadPageWithCurrentPosition(PF_PageHandle &page_handle, int pa
 RC PF_FileHandle::GetFirstPage(PF_PageHandle &page_handle){
   int page_num=0;
   fseek(f, 0, SEEK_SET);
-  while(CheckPageExistence(f)==0){
-    fseek(f, 8<<10, SEEK_CUR);
-    page_num++;
-  }
-
   return LoadPageWithCurrentPosition(page_handle, page_num);
 }
 
 RC PF_FileHandle::GetLastPage(PF_PageHandle &page_handle){
   int page_num=total_page-1;
   fseek(f, -(8<<10), SEEK_END);
-  while(CheckPageExistence(f)==0){
-    fseek(f, -(8<<10), SEEK_CUR);
-    page_num--;
-  }
-
   return LoadPageWithCurrentPosition(page_handle, page_num);
 }
 
@@ -142,11 +130,6 @@ RC PF_FileHandle::GetNextPage(int current, PF_PageHandle &page_handle) {
     return WRONG_PAGE_NUMBER;
   int page_num=current+1;
   fseek(f, (current+1)*(8<<10), SEEK_SET);
-  while(CheckPageExistence(f)==0){
-    fseek(f, 8<<10, SEEK_CUR);
-    page_num++;
-  }
-
   return LoadPageWithCurrentPosition(page_handle, page_num);
 }
     
@@ -155,11 +138,6 @@ RC PF_FileHandle::GetPrevPage(int current, PF_PageHandle &page_handle) {
     return WRONG_PAGE_NUMBER;
   int page_num=current-1;
   fseek(f, (current-1)*(8<<10), SEEK_SET);
-  while(CheckPageExistence(f)==0){
-    fseek(f, -(8<<10), SEEK_CUR);
-    page_num--;
-  }
-
   return LoadPageWithCurrentPosition(page_handle, page_num);
 }
 
@@ -168,7 +146,6 @@ RC PF_FileHandle::GetThisPage(int current, PF_PageHandle &page_handle) {
     return WRONG_PAGE_NUMBER;
   int page_num=current;
   fseek(f, current*(8<<10), SEEK_SET);
-
   return LoadPageWithCurrentPosition(page_handle, page_num);
 }
 
@@ -183,21 +160,6 @@ RC PF_FileHandle::AllocatePage(PF_PageHandle &page_handle){
   int page_num=total_page-1;
 
   return LoadPageWithCurrentPosition(page_handle, page_num);
-}
-
-RC PF_FileHandle::DisposePage(int page_num){
-  Byte *mem;
-  RC ret=buffer_manager.FindPage(file_id, page_num, mem);
-  if (mem!=0){
-    return DISPOSE_ERROR;
-  }
-
-  fseek(f, page_num*(8<<10), SEEK_SET);
-  Byte buffer[3];
-  buffer[0]=1; buffer[1]=0; buffer[2]=0;
-  fwrite(buffer, sizeof(Byte), sizeof(buffer), f);
-
-  return OK;
 }
 
 RC PF_FileHandle::MarkDirty(int page_num){

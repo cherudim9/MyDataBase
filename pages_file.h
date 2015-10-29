@@ -176,11 +176,6 @@ class PF_FileHandle {
   //the new page.
   RC AllocatePage   (PF_PageHandle &pageHandle);         // Allocate a new page
 
-  //  This method disposes of the page specified by pageNum. After this method is executed, 
-  //if you scan over the pages of the file, the page numbered pageNum will no longer appear. 
-  //It is a (positive) error to attempt to dispose of a page that is pinned in the buffer pool.
-  RC DisposePage    (int pageNum);                   // Dispose of a page 
-
   //This method marks the page specified by pageNum as "dirty," indicating that the contents
   //of the page have been or will be modified. The page must be pinned in the buffer pool. 
   //A page marked as dirty is written back to disk when the page is removed from the buffer
