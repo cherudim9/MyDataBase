@@ -115,12 +115,28 @@ RC PF_FileHandle::LoadPageWithCurrentPosition(PF_PageHandle &page_handle, int pa
 
 RC PF_FileHandle::GetFirstPage(PF_PageHandle &page_handle){
   int page_num=0;
+
+  Byte *mem=0;
+  RC ret=buffer_manager.FindPage(file_id, page_num, mem);
+  if (mem!=0){
+    page_handle=PF_PageHandle(mem, page_num);
+    return OK;
+  }
+
   fseek(f, 0, SEEK_SET);
   return LoadPageWithCurrentPosition(page_handle, page_num);
 }
 
 RC PF_FileHandle::GetLastPage(PF_PageHandle &page_handle){
   int page_num=total_page-1;
+
+  Byte *mem=0;
+  RC ret=buffer_manager.FindPage(file_id, page_num, mem);
+  if (mem!=0){
+    page_handle=PF_PageHandle(mem, page_num);
+    return OK;
+  }
+
   fseek(f, -(8<<10), SEEK_END);
   return LoadPageWithCurrentPosition(page_handle, page_num);
 }
@@ -129,6 +145,14 @@ RC PF_FileHandle::GetNextPage(int current, PF_PageHandle &page_handle) {
   if (current<0 || current>=total_page-1)
     return WRONG_PAGE_NUMBER;
   int page_num=current+1;
+
+  Byte *mem=0;
+  RC ret=buffer_manager.FindPage(file_id, page_num, mem);
+  if (mem!=0){
+    page_handle=PF_PageHandle(mem, page_num);
+    return OK;
+  }
+
   fseek(f, (current+1)*(8<<10), SEEK_SET);
   return LoadPageWithCurrentPosition(page_handle, page_num);
 }
@@ -137,6 +161,14 @@ RC PF_FileHandle::GetPrevPage(int current, PF_PageHandle &page_handle) {
   if (current<=0 || current>=total_page)
     return WRONG_PAGE_NUMBER;
   int page_num=current-1;
+
+  Byte *mem=0;
+  RC ret=buffer_manager.FindPage(file_id, page_num, mem);
+  if (mem!=0){
+    page_handle=PF_PageHandle(mem, page_num);
+    return OK;
+  }
+
   fseek(f, (current-1)*(8<<10), SEEK_SET);
   return LoadPageWithCurrentPosition(page_handle, page_num);
 }
@@ -145,6 +177,14 @@ RC PF_FileHandle::GetThisPage(int current, PF_PageHandle &page_handle) {
   if (current<0 || current>=total_page)
     return WRONG_PAGE_NUMBER;
   int page_num=current;
+
+  Byte *mem=0;
+  RC ret=buffer_manager.FindPage(file_id, page_num, mem);
+  if (mem!=0){
+    page_handle=PF_PageHandle(mem, page_num);
+    return OK;
+  }
+
   fseek(f, current*(8<<10), SEEK_SET);
   return LoadPageWithCurrentPosition(page_handle, page_num);
 }

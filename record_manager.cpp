@@ -19,14 +19,14 @@ RID::~RID(){
 RC RID::GetPageNum(int &page_number)const{
   page_number=this->page_number;
   if (page_number<0)
-    return NO_PAGE_IN_RID;
+    return INVALID_RID;
   return OK;
 }
 
 RC RID::GetSlotNum(int &slot_number)const{
   slot_number=this->slot_number;
   if (slot_number<0)
-    return NO_SLOT_IN_RID;
+    return INVALID_RID;
   return OK;
 }
 
@@ -59,7 +59,7 @@ RC RM_Record::GetData(Byte *&pData)const{
 RC RM_Record::GetRid(RID &rid)const{
   rid=this->rid;
   if (!rid.Valid())
-    return NO_RID_IN_RECORD;
+    return INVALID_RECORD;
   return OK;
 }
 
@@ -115,6 +115,7 @@ RC RM_FileHandle::GetRec(const RID &rid, RM_Record &rec){
   ret=pf_file_handle.GetThisPage(page_number, page_handle);
   if (ret!=OK)
     return ret;
+  pf_file_handle.MarkDirty(page_number);
   
   Byte *mem;
   ret=page_handle.GetData(mem);
@@ -145,6 +146,7 @@ RC RM_FileHandle::UpdateRec(const RM_Record &rec){
   ret=pf_file_handle.GetThisPage(page_number, page_handle);
   if (ret!=OK)
     return ret;
+  pf_file_handle.MarkDirty(page_number);
   
   Byte *mem;
   ret=page_handle.GetData(mem);
@@ -154,7 +156,6 @@ RC RM_FileHandle::UpdateRec(const RM_Record &rec){
   ret=rec.GetData(new_mem);
 
   memcpy(mem, new_mem, record_size);
-  pf_file_handle.MarkDirty(page_number);
   
   return OK;
 }
@@ -235,14 +236,14 @@ RC RM_FileHandle::DeleteRec(const RID &rid){
   for(int i=0; ; ){
     p--;
     if (slot_number>=i && slot_number<i+8){
-      int np=*p+(1<<(slot_number-i));
+      int np=*p-(1<<(slot_number-i));
       memcpy(p, &np, 1);
       break;
     }else
       i+=8;
   }
 
-  total_record++;
+  total_record--;
   avail_spaces[page_number]--;
   
   return OK;
@@ -253,7 +254,7 @@ bool RM_FileHandle::IsValidSlot(const int page_number, const int slot_number){
   pf_file_handle.GetThisPage(page_number, pf_page_handle);
   Byte *mem;
   pf_page_handle.GetData(mem);
-  mem+=96+(8<<10);
+  mem+=(8<<10);
   mem-=(slot_number/8)+1;
   int x=slot_number%8;
   return ((*mem)>>x&1)==1;
@@ -382,8 +383,8 @@ RC RM_FileScan::GetNextRec(RM_Record &rec){
     
     RC ret=rm_file_handle.GetRec(RID(this->current_page, this->current_slot), rec);
     bool flag=false;
+    Byte *mem=0;
     if (ret==OK){
-      Byte *mem;
       RC ret=rec.GetData(mem);
       switch(attr_type){
       case INT:
@@ -414,6 +415,11 @@ RC RM_FileScan::GetNextRec(RM_Record &rec){
       default:
         ;
       }
+    }
+
+    if (flag){
+      rec=RM_Record(mem, RID(this->current_page, this->current_slot));
+      return OK;
     }
     
     this->current_slot++;
@@ -509,10 +515,7 @@ RC RM_Manager::OpenFile(const char *fileName, RM_FileHandle &rm_file_handle){
   mem+=sizeof(total_record);
 
   int *avail_spaces=new int[pf_file_handle.GetTotalPage()];
-  for(int i=0; i<pf_file_handle.GetTotalPage(); i++){
-    memcpy(avail_spaces+i, mem, sizeof(int));
-    mem+=sizeof(int);
-  }
+  memcpy(avail_spaces, mem, sizeof(int) * pf_file_handle.GetTotalPage() );
 
   rm_file_handle=RM_FileHandle(record_size, max_record_on_page, total_record, avail_spaces
                                , pf_file_handle);
