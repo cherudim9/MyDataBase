@@ -5,7 +5,7 @@ using namespace std;
 //--------------------------[PF_PAGEHANDLE]----------------------------------
 
 PF_PageHandle::PF_PageHandle(){
-  this->mem=mem;
+  this->mem=0;
   this->page_number=-1;
 }
 
@@ -32,14 +32,14 @@ PF_PageHandle& PF_PageHandle::operator= (const PF_PageHandle &page_handle){
 RC PF_PageHandle::GetData(Byte *& pData)const{
   pData=this->mem;
   if (pData==0)
-    return NO_DATA_IN_PAGE;
+    return INVALID_PAGE;
   return OK;
 }
 
 RC PF_PageHandle::GetPageNum(int &page_number)const{
   page_number=this->page_number;
   if (page_number<0)
-    return NO_PAGE_IN_PAGE;
+    return INVALID_PAGE;
   return OK;
 }
 
@@ -174,7 +174,7 @@ RC PF_FileHandle::GetThisPage(int current, PF_PageHandle &page_handle) {
 
 RC PF_FileHandle::AllocatePage(PF_PageHandle &page_handle){
   fseek(f, 0, SEEK_END);
-  Byte *buffer=new Byte[(8<<10)+2];
+  static Byte buffer[(8<<10)+2];
   memset(buffer, 0, (8<<10)+2);
   fwrite(buffer, sizeof(Byte), sizeof(buffer), f);
   fseek(f, -(8<<10), SEEK_END);
@@ -211,6 +211,7 @@ RC PF_FileHandle::UnpinPage(int page_num){
   fseek(f, l_num*(8<<10), SEEK_SET);
   for(int page_num=l_num; page_num<=r_num; page_num++){
     RC ret=buffer_manager.RemovePage(f, file_id, page_num);
+    fseek(f, (8<<10), SEEK_CUR);
     if (ret!=OK)
       return ret;
   }
@@ -224,6 +225,7 @@ RC PF_FileHandle::ForcePages(int page_num){
   fseek(f, l_num*(8<<10), SEEK_SET);
   for(int page_num=l_num; page_num<=r_num; page_num++){
     RC ret=buffer_manager.ForcePage(f, file_id, page_num);
+    fseek(f, (8<<10), SEEK_CUR);
     if (ret!=OK)
       return ret;
   }
@@ -378,8 +380,8 @@ RC PF_Manager::OpenFile(const char *fileName, PF_FileHandle &fileHandle){
   FILE *f=fopen(fileName, "rb+");
   if (f==0)
     return OPEN_ERROR;
-  current_file_id++;
   fileHandle = PF_FileHandle(f, current_file_id, buffer_manager);
+  current_file_id++;
   return OK;
 }
 
