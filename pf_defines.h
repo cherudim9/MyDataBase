@@ -27,7 +27,12 @@ enum RC{
   INVALID_RECORD,
   NO_RID_IN_RECORD,
   INVALID_PAGE,
-  NOT_FOUND
+  NOT_FOUND,
+  ATTRIBUTE_CATALOG_OPEN_ERROR,
+  SYSTEM_CATALOG_OPEN_ERROR,
+  ATTRIBUTE_CATALOG_CLOSE_ERROR,
+  SYSTEM_CATALOG_CLOSE_ERROR,
+  TABLE_CREATE_ERROR
 };
 
 enum AttrType{
@@ -54,3 +59,8 @@ enum ClientHint{
 
 typedef unsigned int BufType;
 typedef unsigned char Byte;
+
+const int RELNAME_LENGTH=30;
+const int ATTRNAME_LENGTH=30;
+const int MAX_ATTRIBUTE=100;
+const int MAX_VARCHAR_LENGTH=500;

@@ -115,7 +115,7 @@ class PF_FileHandle {
 
  private:
 
-  PF_BufferManager buffer_manager;
+  PF_BufferManager *buffer_manager;
 
   FILE *f;
 
@@ -135,7 +135,7 @@ class PF_FileHandle {
 
   PF_FileHandle();
 
-  PF_FileHandle  (FILE *f, int f_id, const PF_BufferManager &buffer_manager2);                                  // Default constructor
+  PF_FileHandle  (FILE *f, int f_id, PF_BufferManager *buffer_manager2);                                  // Default constructor
 
   ~PF_FileHandle ();                                  // Destructor
 

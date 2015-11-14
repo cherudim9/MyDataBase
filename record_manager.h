@@ -88,6 +88,7 @@ class RM_FileHandle {
     return pf_file_handle;
   }
 
+  RM_FileHandle();
   RM_FileHandle  (const int, const int, const int, int *, const PF_FileHandle&);      
 
   ~RM_FileHandle ();      
@@ -103,7 +104,7 @@ class RM_FileHandle {
   //This method should insert the data pointed to by pData as a new record in the file. 
   //If successful, the return parameter &rid should point to the record identifier of the
   //newly inserted record.
-  RC InsertRec      (const char *pData, RID &rid);       // Insert a new record,
+  RC InsertRec      (const Byte *pData, RID &rid);       // Insert a new record,
 
   //This method should delete the record with identifier rid from the file. If the page 
   //containing the record becomes empty after the deletion, you can choose either to dispose
@@ -131,6 +132,7 @@ class RM_FileScan {
   int attr_offset;
   CompOp comp_op;
   void *value;
+  int valueLength;
 
   int current_page;
   int current_slot;
@@ -169,6 +171,7 @@ class RM_FileScan {
 		   int           attrOffset,
 		   CompOp        compOp,
 		   void          *value,
+		   int           valueLength=4,
 		   ClientHint    pinHint = NO_HINT);                          
   ~RM_FileScan ();  
 
@@ -199,9 +202,11 @@ class RM_Manager {
   // usually be much smaller than the size of a page, you should compare recordSize with 
   //PF_PAGE_SIZE and return a nonzero code if recordSize is too large for your RM component to handle.
   RC CreateFile  (const char *fileName, int recordSize);  
+  RC CreateFile  (std::string s, int recordSize){ return CreateFile(std::string(s), recordSize); }
 
   //This method should destroy the file whose name is fileName by calling PF_Manager::DestroyFile.
-  RC DestroyFile (const char *fileName);      
+  RC DestroyFile (const char *fileName);     
+  RC DestroyFile (std::string s){ return DestroyFile(std::string(s)); }
 
   //This method should open the file called fileName by calling PF_Manager::OpenFile.
   //If the method is successful, the fileHandle object should become a "handle" for the 
@@ -214,6 +219,7 @@ class RM_Manager {
   //modified while opened more than once, you need not guarantee the integrity of the file 
   //or the RM component. You may also assume that DestroyFile will never be called on an open file.
   RC OpenFile    (const char *fileName, RM_FileHandle &fileHandle);
+  RC OpenFile    (std::string s, RM_FileHandle &fileHandle){ return OpenFile(std::string(s), fileHandle); }
 
 
   //This method should close the open file instance referred to by fileHandle by calling PF_Manager:: CloseFile.

@@ -53,12 +53,14 @@ RM_Record::~RM_Record(){
 
 RC RM_Record::GetData(Byte *&pData)const{
   pData=this->mem;
+  if (!Valid())
+    return INVALID_RECORD;
   return OK;
 }
 
 RC RM_Record::GetRid(RID &rid)const{
   rid=this->rid;
-  if (!rid.Valid())
+  if (!Valid())
     return INVALID_RECORD;
   return OK;
 }
@@ -79,6 +81,13 @@ RM_FileHandle::RM_FileHandle(const int record_size, const int max_record_on_page
   this->total_record=total_record;
   this->avail_spaces=avail_spaces;
   this->pf_file_handle=pf_file_handle;
+}
+
+RM_FileHandle::RM_FileHandle(){
+  this->record_size=-1;
+  this->max_record_on_page=-1;
+  this->total_record=-1;
+  this->avail_spaces=0;
 }
 
 RM_FileHandle::~RM_FileHandle(){
@@ -164,7 +173,7 @@ RC RM_FileHandle::ForcePages(int page_number){
   return pf_file_handle.ForcePages(page_number);
 }
 
-RC RM_FileHandle::InsertRec(const char *pData, RID &rid){
+RC RM_FileHandle::InsertRec(const Byte *pData, RID &rid){
   int page_number=-1;
   //don't insert into the first page; it's the header page
   for(int i=1; i<pf_file_handle.GetTotalPage(); i++)
@@ -257,7 +266,7 @@ bool RM_FileHandle::IsValidSlot(const int page_number, const int slot_number){
   mem+=(8<<10);
   mem-=(slot_number/8)+1;
   int x=slot_number%8;
-  return ((*mem)>>x&1)==1;
+  return (((*mem)>>x)&1)==1;
 }
 
 //-------------------------------[RM_FILEHANDLE]-----------------------------------
@@ -266,18 +275,20 @@ bool RM_FileHandle::IsValidSlot(const int page_number, const int slot_number){
 //-------------------------------[RM_FILESCAN]-----------------------------------
 
 RM_FileScan::RM_FileScan(RM_FileHandle &rm_file_handle2,
-            AttrType attr_type,
-            int attr_length,
-            int attr_offset,
-            CompOp comp_op,
-            void *value,
-            ClientHint pinHint)
+                         AttrType attr_type,
+                         int attr_length,
+                         int attr_offset,
+                         CompOp comp_op,
+                         void *value,
+                         int valueLength,
+                         ClientHint pinHint)
   :rm_file_handle(rm_file_handle2){
   this->attr_type=attr_type;
   this->attr_length=attr_length;
   this->attr_offset=attr_offset;
   this->comp_op=comp_op;
   this->value=value;
+  this->valueLength=valueLength;
 
   this->current_page=1;
   this->current_slot=0;
@@ -408,7 +419,7 @@ RC RM_FileScan::GetNextRec(RM_Record &rec){
         }
 
       case STRING:
-        if (_Validate(std::string((char*)(mem+attr_offset), attr_length), std::string((char*)value, attr_length)))
+        if (_Validate(std::string((char*)(mem+attr_offset), attr_length), std::string((char*)value, valueLength)))
           flag=true;
         break;
 

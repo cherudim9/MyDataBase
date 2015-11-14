@@ -69,9 +69,10 @@ void PF_FileHandle::_InitPages(){
 PF_FileHandle::PF_FileHandle(){
   this->f=0;
   this->file_id=-1;
+  this->buffer_manager=0;
 }
 
-PF_FileHandle::PF_FileHandle(FILE *f, int file_id, const PF_BufferManager &buffer_manager2)
+PF_FileHandle::PF_FileHandle(FILE *f, int file_id, PF_BufferManager *buffer_manager2)
   :buffer_manager(buffer_manager2){
   this->f=f;
   this->file_id=file_id;
@@ -82,19 +83,20 @@ PF_FileHandle::~PF_FileHandle(){
   //do nothing
 }
 
-PF_FileHandle::PF_FileHandle(const PF_FileHandle &other)
-  :buffer_manager(other.buffer_manager){
+PF_FileHandle::PF_FileHandle(const PF_FileHandle &other){
   this->f=other.f;
   this->file_id=other.file_id;
+  this->buffer_manager=other.buffer_manager;
   _InitPages();
 }
 
-// PF_FileHandle& PF_FileHandle::operator= (const PF_FileHandle &other)
-//   :buffer_manager(other->buffer_manager){
-//   this->f=other.f;
-//   this->file_id=other.file_id;
-//   _InitPages();
-// }
+PF_FileHandle& PF_FileHandle::operator= (const PF_FileHandle &other){
+  this->f=other.f;
+  this->file_id=other.file_id;
+  this->buffer_manager=other.buffer_manager;
+  _InitPages();
+  return *this;
+}
 
 FILE* PF_FileHandle::getF(){
   return f;
@@ -104,7 +106,7 @@ RC PF_FileHandle::LoadPageWithCurrentPosition(PF_PageHandle &page_handle, int pa
   if (CheckPageExistence(f)){
     //the current page is ok
     Byte *mem;
-    RC ret=buffer_manager.AddPage(f, file_id, page_num, mem);
+    RC ret=buffer_manager->AddPage(f, file_id, page_num, mem);
     if (ret!=OK)
       return ret;
     page_handle=PF_PageHandle(mem, page_num);
@@ -117,7 +119,7 @@ RC PF_FileHandle::GetFirstPage(PF_PageHandle &page_handle){
   int page_num=0;
 
   Byte *mem=0;
-  RC ret=buffer_manager.FindPage(file_id, page_num, mem);
+  RC ret=buffer_manager->FindPage(file_id, page_num, mem);
   if (mem!=0){
     page_handle=PF_PageHandle(mem, page_num);
     return OK;
@@ -131,7 +133,7 @@ RC PF_FileHandle::GetLastPage(PF_PageHandle &page_handle){
   int page_num=total_page-1;
 
   Byte *mem=0;
-  RC ret=buffer_manager.FindPage(file_id, page_num, mem);
+  RC ret=buffer_manager->FindPage(file_id, page_num, mem);
   if (mem!=0){
     page_handle=PF_PageHandle(mem, page_num);
     return OK;
@@ -147,7 +149,7 @@ RC PF_FileHandle::GetNextPage(int current, PF_PageHandle &page_handle) {
   int page_num=current+1;
 
   Byte *mem=0;
-  RC ret=buffer_manager.FindPage(file_id, page_num, mem);
+  RC ret=buffer_manager->FindPage(file_id, page_num, mem);
   if (mem!=0){
     page_handle=PF_PageHandle(mem, page_num);
     return OK;
@@ -163,7 +165,7 @@ RC PF_FileHandle::GetPrevPage(int current, PF_PageHandle &page_handle) {
   int page_num=current-1;
 
   Byte *mem=0;
-  RC ret=buffer_manager.FindPage(file_id, page_num, mem);
+  RC ret=buffer_manager->FindPage(file_id, page_num, mem);
   if (mem!=0){
     page_handle=PF_PageHandle(mem, page_num);
     return OK;
@@ -179,7 +181,7 @@ RC PF_FileHandle::GetThisPage(int current, PF_PageHandle &page_handle) {
   int page_num=current;
 
   Byte *mem=0;
-  RC ret=buffer_manager.FindPage(file_id, page_num, mem);
+  RC ret=buffer_manager->FindPage(file_id, page_num, mem);
   if (mem!=0){
     page_handle=PF_PageHandle(mem, page_num);
     return OK;
@@ -203,7 +205,7 @@ RC PF_FileHandle::AllocatePage(PF_PageHandle &page_handle){
 }
 
 RC PF_FileHandle::MarkDirty(int page_num){
-  return buffer_manager.MarkDirty(file_id, page_num);
+  return buffer_manager->MarkDirty(file_id, page_num);
 }
 
 RC PF_FileHandle::UnpinPage(int page_num){
@@ -212,8 +214,7 @@ RC PF_FileHandle::UnpinPage(int page_num){
     l_num=0, r_num=total_page-1;
   fseek(f, l_num*(8<<10), SEEK_SET);
   for(int page_num=l_num; page_num<=r_num; page_num++){
-    RC ret=buffer_manager.RemovePage(f, file_id, page_num);
-    fseek(f, (8<<10), SEEK_CUR);
+    RC ret=buffer_manager->RemovePage(f, file_id, page_num);
     if (ret!=OK)
       return ret;
   }
@@ -226,8 +227,7 @@ RC PF_FileHandle::ForcePages(int page_num){
     l_num=0, r_num=total_page-1;
   fseek(f, l_num*(8<<10), SEEK_SET);
   for(int page_num=l_num; page_num<=r_num; page_num++){
-    RC ret=buffer_manager.ForcePage(f, file_id, page_num);
-    fseek(f, (8<<10), SEEK_CUR);
+    RC ret=buffer_manager->ForcePage(f, file_id, page_num);
     if (ret!=OK)
       return ret;
   }
@@ -322,7 +322,8 @@ RC PF_BufferManager::RemovePage(FILE *f, const int file_id, const int page_numbe
   if (dirty[idx]){
     dirty[idx]=0;
     fwrite(addr[idx], sizeof(Byte), (8<<10), f);
-  }
+  }else
+    fseek(f, (8<<10), SEEK_CUR);
   filepage2idx.erase(make_pair(file_id, page_number));
   _RemoveIndex(idx);
   return OK;
@@ -336,7 +337,8 @@ RC PF_BufferManager::ForcePage(FILE *f, const int file_id, const int page_number
   if (dirty[idx]){
     dirty[idx]=0;
     fwrite(addr[idx], sizeof(Byte), (8<<10), f);
-  }
+  }else
+    fseek(f, (8<<10), SEEK_CUR);
   return OK;
 }
 
@@ -382,7 +384,7 @@ RC PF_Manager::OpenFile(const char *fileName, PF_FileHandle &fileHandle){
   FILE *f=fopen(fileName, "rb+");
   if (f==0)
     return OPEN_ERROR;
-  fileHandle = PF_FileHandle(f, current_file_id, buffer_manager);
+  fileHandle = PF_FileHandle(f, current_file_id, &buffer_manager);
   current_file_id++;
   return OK;
 }
