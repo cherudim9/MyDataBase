@@ -1,4 +1,7 @@
-all:	bin/PF.o	bin/RM.o	bin/SM.o	bin/parser.o	bin/CREATE	makefile	bin/DROP 	bin/SHOW	bin/USE	
+all:	bin/PF.o	bin/RM.o	bin/SM.o	bin/parser.o	bin/CREATE	makefile	bin/DROP 	bin/SHOW	bin/USE 	bin/TEST_pf
+
+bin/TEST_pf: test_pages_file.cpp bin/PF.o
+	g++ bin/PF.o test_pages_file.cpp -o bin/TEST_pf
 
 bin/CREATE:	CREATE.cpp	bin/RM.o	bin/PF.o
 	g++ bin/PF.o bin/SM.o bin/RM.o CREATE.cpp -o bin/CREATE

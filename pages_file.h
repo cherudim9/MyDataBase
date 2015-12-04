@@ -4,6 +4,8 @@
 #include <iostream>
 #include "pf_defines.h"
 
+void PF_PrintError(RC rc);
+
 class PF_PageHandle {
 
  private:
@@ -18,7 +20,7 @@ class PF_PageHandle {
 
   ~PF_PageHandle ();                          // Destructor
 
-  PF_PageHandle  (const PF_PageHandle &pageHandle); 
+  PF_PageHandle  (const PF_PageHandle &pageHandle);
 
   PF_PageHandle& operator= (const PF_PageHandle &pageHandle);
 
@@ -29,8 +31,6 @@ class PF_PageHandle {
   //   the page contents
   RC GetPageNum     (int &pageNum) const;    // Return the page number
 };
-
-const int BUFFER_SIZE=100;
 
 //http://stackoverflow.com/questions/4870437/pairint-int-pair-as-key-of-unordered-map-issue
 class PairHash{
@@ -46,11 +46,13 @@ class PF_BufferManager{
 
  private:
 
+  static const int BUFFER_SIZE=1000;
+
   //dirty array marks whether the loaded pages in memory has been modified or not
   bool dirty[BUFFER_SIZE];
 
   //addr records all memory addresses of the buffer
-  Byte* addr[BUFFER_SIZE];
+  Byte addr[BUFFER_SIZE][(8<<10)+8];
 
   //Each of file_id[i] corresponds to addr[i[ and page_number[i]
   int file_id[BUFFER_SIZE];
@@ -64,9 +66,9 @@ class PF_BufferManager{
   //current time stamp
   int time_stamp;
 
-  //time stamp for the access of all buffers 
+  //time stamp for the access of all buffers
   int time[BUFFER_SIZE];
-  
+
   //Map from visiting time stamp to buffer index
   std::map<int,int> time2idx;
 
@@ -76,9 +78,9 @@ class PF_BufferManager{
   //FindIndex finds an empty space in buffer and return it as idx. When all space in
   //buffer is used up, it applies Least Recently Used algorithm to free one index and
   //take its spot.
-  RC _FindIndex(int &idx);
+  RC _FindIndex(int &idx, bool &overwrite);
 
-  //RemoveIndex remove the idx-th buffer from the memory. 
+  //RemoveIndex remove the idx-th buffer from the memory.
   RC _RemoveIndex(const int idx);
 
   //Mark the idx-th buffer as newly visited.
@@ -94,7 +96,7 @@ class PF_BufferManager{
   RC FindPage(const int file_id, const int page_number, Byte *&mem);
 
   //Loaded page_number-th page in file indexed by file_id into buffer. Do nothing if it's
-  //already loaded. Update 
+  //already loaded. Update
   RC AddPage(FILE * f, const int file_id, const int page_number, Byte *&mem);
 
   //Removee page_number-th page in file indexed by file_id from buffer. Do nothing if it's
@@ -108,6 +110,8 @@ class PF_BufferManager{
 
   //Mark page_number-th page in file indexed by file_id as dirty.
   RC MarkDirty(const int file_id, const int page_number);
+
+  RC Show(std::ostream &Out);
 
 };
 
@@ -146,38 +150,38 @@ class PF_FileHandle {
   FILE* getF();
 
   //For this and the following methods, it is a (positive) error if the PF_FileHandle
-  //object for which the method is called does not refer to an open file. This method 
-  //reads the first page of the file into the buffer pool in memory. If the page fetch 
-  //is successful, the pageHandle object becomes a handle for the page. The page handle 
-  //is used to access the page's contents (see the PF_PageHandle class description below). 
-  //The page read is automatically pinned in the buffer pool and remains pinned until 
-  //it is explicitly unpinned by calling the UnpinPage method (below). This method 
+  //object for which the method is called does not refer to an open file. This method
+  //reads the first page of the file into the buffer pool in memory. If the page fetch
+  //is successful, the pageHandle object becomes a handle for the page. The page handle
+  //is used to access the page's contents (see the PF_PageHandle class description below).
+  //The page read is automatically pinned in the buffer pool and remains pinned until
+  //it is explicitly unpinned by calling the UnpinPage method (below). This method
   //returns the positive code PF_EOF if end-of-file is reached (meaning there is no first page).
   RC GetFirstPage   (PF_PageHandle &pageHandle) ;   // Get the first page
-  
+
   RC GetLastPage    (PF_PageHandle &pageHandle) ;   // Get the last page
-  
-  //This method reads into memory the next valid page after the page whose 
-  //number is current. If the page fetch is successful, pageHandle becomes a handle 
-  //for the page. The page read is pinned in the buffer pool until it is unpinned by 
-  //calling the UnpinPage method. This method returns PF_EOF if end-of-file is reached 
+
+  //This method reads into memory the next valid page after the page whose
+  //number is current. If the page fetch is successful, pageHandle becomes a handle
+  //for the page. The page read is pinned in the buffer pool until it is unpinned by
+  //calling the UnpinPage method. This method returns PF_EOF if end-of-file is reached
   //(meaning there is no next page). Note that it is not an error if current does not
   //correspond to a valid page (e.g., if the page numbered current has been disposed of).
-  RC GetNextPage    (int current, PF_PageHandle &pageHandle) ; 
+  RC GetNextPage    (int current, PF_PageHandle &pageHandle) ;
 
   RC GetPrevPage    (int current, PF_PageHandle &pageHandle) ;
 
-  //Parameter pageNum must be a valid page number. As usual, the page read is pinned 
+  //Parameter pageNum must be a valid page number. As usual, the page read is pinned
   //in the buffer pool until it is explicitly unpinned.
-  RC GetThisPage    (int pageNum, PF_PageHandle &pageHandle) ;  
-  
+  RC GetThisPage    (int pageNum, PF_PageHandle &pageHandle) ;
+
   //This method allocates a new page in the file, reads the new page into memory,
-  //and pins the new page in the buffer pool. If successful, pageHandle becomes a handle for 
+  //and pins the new page in the buffer pool. If successful, pageHandle becomes a handle for
   //the new page.
   RC AllocatePage   (PF_PageHandle &pageHandle);         // Allocate a new page
 
   //This method marks the page specified by pageNum as "dirty," indicating that the contents
-  //of the page have been or will be modified. The page must be pinned in the buffer pool. 
+  //of the page have been or will be modified. The page must be pinned in the buffer pool.
   //A page marked as dirty is written back to disk when the page is removed from the buffer
   //pool. (Pages not marked as dirty are never written back to disk.)
   RC MarkDirty      (int pageNum) ;             // Mark a page as dirty
@@ -188,11 +192,13 @@ class PF_FileHandle {
 
   //This method copies the contents of the page specified by pageNum from the buffer
   //pool to disk if the page is in the buffer pool and is marked as dirty. The page remains
-  //in the buffer pool but is no longer marked as dirty. If no specific page number is provided 
+  //in the buffer pool but is no longer marked as dirty. If no specific page number is provided
   //(i.e., pageNum = ALL_PAGES), then all dirty pages of this file that are in the buffer pool
   //are copied to disk and are no longer marked as dirty. Note that page contents are copied
   //to disk whether or not a page is pinned.
-  RC ForcePages     (int pageNum = ALL_PAGES) ; 
+  RC ForcePage     (int pageNum = ALL_PAGES) ;
+
+  RC Show(std::ostream &Out); 
 
  };
 
@@ -208,39 +214,43 @@ class PF_Manager
 
   ~PF_Manager   ();                           // Destructor
 
+  PF_BufferManager* GetBufferManager(){
+    return &buffer_manager;
+  }
+
   RC CreateFile    (const char *fileName);       // Create a new file
 
   RC DestroyFile   (const char *fileName);       // Destroy a file
 
-  //This method opens the paged file whose name is fileName. The file must already 
-  //exist and it must have been created using the CreateFile method. If the method 
+  //This method opens the paged file whose name is fileName. The file must already
+  //exist and it must have been created using the CreateFile method. If the method
   //is successful, the fileHandle object whose address is passed as a parameter becomes
-  //a "handle" for the open file. The file handle is used to manipulate the pages of 
-  //the file (see the PF_FileHandle class description below). It is a (positive) error 
+  //a "handle" for the open file. The file handle is used to manipulate the pages of
+  //the file (see the PF_FileHandle class description below). It is a (positive) error
   //if fileHandle is already a handle for an open file when it is passed to the OpenFile method.
-  //It is not an error to open the same file more than once if desired, using a different 
+  //It is not an error to open the same file more than once if desired, using a different
   //fileHandle object each time. Each call to the OpenFile method creates a new "instance" of
   //the open file. Warning: Opening a file more than once for data modification is not prevented
   //by the PF component, but doing so is likely to corrupt the file structure and may crash the
   //PF component. Opening a file more than once for reading is no problem.
-  RC OpenFile      (const char *fileName, PF_FileHandle &fileHandle);  
+  RC OpenFile      (const char *fileName, PF_FileHandle &fileHandle);
 
-  //This method closes the open file instance referred to by fileHandle. The file must have 
+  //This method closes the open file instance referred to by fileHandle. The file must have
   //been opened using the OpenFile method. All of the file's pages are flushed from the buffe
-  //r pool when the file is closed. It is a (positive) error to attempt to close a file when 
+  //r pool when the file is closed. It is a (positive) error to attempt to close a file when
   //any of its pages are still pinned in the buffer pool.
   RC CloseFile     (PF_FileHandle &fileHandle);  // Close a file
 
   //This method allocates a "scratch" memory page (block) in the buffer pool and sets buffer
   //to point to it. The amount of memory available in the block is PF_PAGE_SIZE + 4 = 4096 bytes.
   //The scratch page is automatically pinned in the buffer pool.
-  //RC AllocateBlock (char *&buffer); 
+  //RC AllocateBlock (char *&buffer);
 
   //This method disposes of the scratch page in the buffer pool pointed to by buffer, which
   //must have been allocated previously by PF_Manager::AllocateBlock. Similar to pinning an
-  //d unpinning, you must call PF_Manager::DisposeBlock for each buffer block obtained 
+  //d unpinning, you must call PF_Manager::DisposeBlock for each buffer block obtained
   //by calling PF_Manager::AllocateBlock; otherwise you will lose pages in the buffer pool permanently.
-  //RC DisposeBlock  (char *buffer); 
+  //RC DisposeBlock  (char *buffer);
 };
 
 

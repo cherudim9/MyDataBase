@@ -170,7 +170,7 @@ RC RM_FileHandle::UpdateRec(const RM_Record &rec){
 }
 
 RC RM_FileHandle::ForcePages(int page_number){
-  return pf_file_handle.ForcePages(page_number);
+  return pf_file_handle.ForcePage(page_number);
 }
 
 RC RM_FileHandle::InsertRec(const Byte *pData, RID &rid){
