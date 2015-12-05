@@ -34,7 +34,7 @@ class RM_Record {
   RID rid;
  public:
   RM_Record  (); 
-  RM_Record(Byte *pData, const RID &rid);
+  RM_Record(const Byte *pData, int record_size, const RID &rid);
   ~RM_Record (); 
 
   //For this and the following method, it should be a (positive) error if a
@@ -42,7 +42,7 @@ class RM_Record {
   //called. This method provides access to the contents (data) of the record. If the 
   //method succeeds, pData should point to the contents of the copy of the record 
   //created by RM_FileHandle::GetRec() or RM_FileScan::GetNextRec().
-  RC GetData    (Byte *&pData) const;   
+  RC GetData    (const Byte *&pData) const;   
 
   RC GetRid     (RID &rid) const;  
 
@@ -90,6 +90,9 @@ class RM_FileHandle {
 
   RM_FileHandle();
   RM_FileHandle  (const int, const int, const int, int *, const PF_FileHandle&);      
+  RM_FileHandle(const RM_FileHandle &rfh);
+
+  RM_FileHandle& operator=(const RM_FileHandle &rfh);
 
   ~RM_FileHandle ();      
 
@@ -122,6 +125,8 @@ class RM_FileHandle {
   RC ForcePages     (int pageNum = ALL_PAGES) ;
 
   bool IsValidSlot(const int page_number, const int slot_number);
+
+  void Show(std::ostream &Out);
 };
 
 class RM_FileScan {
@@ -181,7 +186,9 @@ class RM_FileScan {
   //define) if there are no records left satisfying the scan condition. You may assume 
   //that RM component clients will not close the corresponding open file instance while a
   //scan is underway.
-  RC GetNextRec   (RM_Record &rec);       
+  RC GetNextRec   (RM_Record &rec);    
+
+  bool over()const;   
 
   //This method should terminate the file scan.           
   RC CloseScan    ();                                

@@ -9,7 +9,7 @@
 #include <map>
 #include <cassert>
 
-#define EPS (1e-8)
+#define EPS (1e-6)
 
 enum RC{
   OK,
@@ -25,6 +25,8 @@ enum RC{
   TOO_LONG_RECORD,
   INVALID_RID,
   INVALID_RECORD,
+  EXPANDING_EMPTY_FILE,
+  OPERATION_ON_HEAD_PAGE,
   NO_RID_IN_RECORD,
   INVALID_PAGE,
   NOT_FOUND,

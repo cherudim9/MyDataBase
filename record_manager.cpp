@@ -1,5 +1,29 @@
 #include "record_manager.h"
 
+using namespace std;
+
+void RM_PrintError (RC rc){
+  cerr << "--RM--: ";
+  switch(rc){
+    
+  case EXPANDING_EMPTY_FILE:
+    cerr<< " Tried to expand the file specified in record_file_handle, but the handle is invalid";
+    break;
+
+  case TOO_LONG_RECORD:
+    cerr<< "Record size too long, exceeded (8192-96)";
+    break;
+
+  case OPERATION_ON_HEAD_PAGE:
+    cerr<<"Operation on head page is invalid";
+    break;
+
+  default:
+    cerr<<"Unknown error??? (code: "<<rc<<" )";
+  }
+  cerr << endl;
+}
+
 //-------------------------------[RID]-----------------------------------
 
 RID::RID(){
@@ -42,8 +66,9 @@ RM_Record::RM_Record(){
 
 }
 
-RM_Record::RM_Record(Byte *pData, const RID &rid){
-  this->mem=pData;
+RM_Record::RM_Record(const Byte *pData, int record_size, const RID &rid){
+  this->mem=new Byte[record_size];
+  memcpy(this->mem, pData, record_size * sizeof(Byte));
   this->rid=rid;
 }
 
@@ -51,7 +76,7 @@ RM_Record::~RM_Record(){
 
 }
 
-RC RM_Record::GetData(Byte *&pData)const{
+RC RM_Record::GetData(const Byte *&pData)const{
   pData=this->mem;
   if (!Valid())
     return INVALID_RECORD;
@@ -90,18 +115,56 @@ RM_FileHandle::RM_FileHandle(){
   this->avail_spaces=0;
 }
 
+RM_FileHandle::RM_FileHandle(const RM_FileHandle &rfh){
+  this->record_size = rfh.GetRecordSize();
+  this->max_record_on_page = rfh.GetMaxRecordOnPage();
+  this->total_record = rfh.GetTotalRecord();
+  this->pf_file_handle = rfh.GetPFFileHandle();
+  int n=this->pf_file_handle.GetTotalPage();
+  this->avail_spaces = new int [n];
+  for(int i=0; i<n; i++)
+    this->avail_spaces[i]=rfh.GetAvailSpaces(i);
+}
+
+RM_FileHandle& RM_FileHandle::operator=(const RM_FileHandle &rfh2){
+  this->record_size = rfh2.GetRecordSize();
+  this->max_record_on_page = rfh2.GetMaxRecordOnPage();
+  this->total_record = rfh2.GetTotalRecord();
+  this->pf_file_handle = rfh2.GetPFFileHandle(); 
+  int n=this->pf_file_handle.GetTotalPage();
+  this->avail_spaces=new int[n];
+  for(int i=0; i<n; i++)
+    this->avail_spaces[i]=rfh2.GetAvailSpaces(i);
+  return *this;
+}
+
 RM_FileHandle::~RM_FileHandle(){
-  delete avail_spaces;
+  if (avail_spaces){
+    delete avail_spaces;
+  }
 }
 
 RC RM_FileHandle::_ExpandPages(){
+  if (pf_file_handle.getF()==0){
+    RM_PrintError(EXPANDING_EMPTY_FILE);
+    return EXPANDING_EMPTY_FILE;
+  }
   int current_total_page=pf_file_handle.GetTotalPage();
+
   PF_PageHandle pf_page_handle;
   for(int i=0; i<current_total_page; i++){
     RC ret=pf_file_handle.AllocatePage(pf_page_handle);
     if (ret!=OK)
       return ret;
   }
+
+  int *a=new int[pf_file_handle.GetTotalPage()];
+  for(int i=0; i<current_total_page; i++)
+    a[i]=this->avail_spaces[i];
+  for(int i=current_total_page; i<pf_file_handle.GetTotalPage(); i++)
+    a[i]=this->max_record_on_page;
+  this->avail_spaces=a;
+
   return OK;
 }
 
@@ -115,9 +178,14 @@ RC RM_FileHandle::GetRec(const RID &rid, RM_Record &rec){
   if (ret!=OK)
     return ret;
 
+  if (page_number==0){
+    RM_PrintError(OPERATION_ON_HEAD_PAGE);
+    return OPERATION_ON_HEAD_PAGE;
+  }
+
   if (!IsValidSlot(page_number, slot_number)){
     rec=RM_Record();
-    return OK;
+    return NOT_FOUND;
   }
   
   PF_PageHandle page_handle;
@@ -131,7 +199,7 @@ RC RM_FileHandle::GetRec(const RID &rid, RM_Record &rec){
 
   mem+=96+record_size*slot_number;
   
-  rec=RM_Record(mem, RID(page_number, slot_number));
+  rec=RM_Record(mem, record_size, RID(page_number, slot_number));
 
   return OK;
 }
@@ -150,6 +218,15 @@ RC RM_FileHandle::UpdateRec(const RM_Record &rec){
   ret=rid.GetSlotNum(slot_number);
   if (ret!=OK)
     return ret;
+
+  if (page_number==0){
+    RM_PrintError(OPERATION_ON_HEAD_PAGE);
+    return OPERATION_ON_HEAD_PAGE;
+  }
+
+  if (!IsValidSlot(page_number, slot_number)){
+    return NOT_FOUND;
+  }
   
   PF_PageHandle page_handle;
   ret=pf_file_handle.GetThisPage(page_number, page_handle);
@@ -161,7 +238,7 @@ RC RM_FileHandle::UpdateRec(const RM_Record &rec){
   ret=page_handle.GetData(mem);
   mem+=96+record_size*slot_number;
   
-  Byte *new_mem;
+  const Byte *new_mem;
   ret=rec.GetData(new_mem);
 
   memcpy(mem, new_mem, record_size);
@@ -175,7 +252,8 @@ RC RM_FileHandle::ForcePages(int page_number){
 
 RC RM_FileHandle::InsertRec(const Byte *pData, RID &rid){
   int page_number=-1;
-  //don't insert into the first page; it's the header page
+  RC ret;
+  //don't insert into the first page; it's the head page
   for(int i=1; i<pf_file_handle.GetTotalPage(); i++)
     if (avail_spaces[i]!=0){
       page_number=i;
@@ -183,11 +261,18 @@ RC RM_FileHandle::InsertRec(const Byte *pData, RID &rid){
     }
   if (page_number==-1){
     page_number=(pf_file_handle.GetTotalPage());
-    _ExpandPages();
+    ret=_ExpandPages();
+    if (ret!=OK)
+      return ret;
+  }
+
+  if (page_number==0){
+    RM_PrintError(OPERATION_ON_HEAD_PAGE);
+    return OPERATION_ON_HEAD_PAGE;
   }
   
   PF_PageHandle pf_page_handle;
-  RC ret=pf_file_handle.GetThisPage(page_number, pf_page_handle);
+  ret=pf_file_handle.GetThisPage(page_number, pf_page_handle);
   if (ret!=OK)
     return ret;
 
@@ -197,7 +282,7 @@ RC RM_FileHandle::InsertRec(const Byte *pData, RID &rid){
 
   int slot=-1;
   Byte *p=mem+(8<<10);
-  for(int i=0; i<=max_record_on_page; ){
+  for(int i=0; i<max_record_on_page; ){
     p--;
     int di=-1;
     for(int j=0; j<8; j++)
@@ -232,6 +317,15 @@ RC RM_FileHandle::DeleteRec(const RID &rid){
   ret=rid.GetSlotNum(slot_number);
   if (ret!=OK)
     return ret;
+
+  if (page_number==0){
+    RM_PrintError(OPERATION_ON_HEAD_PAGE);
+    return OPERATION_ON_HEAD_PAGE;
+  }
+
+  if (!IsValidSlot(page_number, slot_number)){
+    return NOT_FOUND;
+  }
   
   PF_PageHandle pf_page_handle;
   ret=pf_file_handle.GetThisPage(page_number, pf_page_handle);
@@ -253,7 +347,7 @@ RC RM_FileHandle::DeleteRec(const RID &rid){
   }
 
   total_record--;
-  avail_spaces[page_number]--;
+  avail_spaces[page_number]++;
   
   return OK;
 }
@@ -267,6 +361,28 @@ bool RM_FileHandle::IsValidSlot(const int page_number, const int slot_number){
   mem-=(slot_number/8)+1;
   int x=slot_number%8;
   return (((*mem)>>x)&1)==1;
+}
+
+void RM_FileHandle::Show(std::ostream &Out){
+  Out<<"[Show] ";
+  Out<<"record_size = "<<record_size<<"\t";
+  Out<<"max_record_on_page = "<<max_record_on_page<<"\t\t";
+  Out<<"total_record = "<<total_record<<"\t";
+  Out<<endl<<"       ";
+  Out<<"total page = "<<pf_file_handle.GetTotalPage()<<", ";
+  Out<<"available_spaces = [";
+  const int max_record_shown=500;
+  for(int i=0, n=pf_file_handle.GetTotalPage(), cnt=0; i<n; i++){
+    if (cnt<max_record_shown || i==n-1){
+      Out<<avail_spaces[i]<<" ";
+      cnt++;
+    }else{
+      if (cnt==max_record_shown)
+        Out<<" ... ";
+      cnt++;
+    }
+  }
+  Out<<"]"<<endl;
 }
 
 //-------------------------------[RM_FILEHANDLE]-----------------------------------
@@ -377,6 +493,18 @@ bool RM_FileScan::_Validate(const float op1, const float op2)const{
   return 0;
 }
 
+bool RM_FileScan::over()const{
+  return this->current_page>=rm_file_handle.GetTotalPage();
+}
+
+string GenString(char *a, int n){
+  int i=0; 
+  for(; i<n; i++)
+    if (a[i]==0)
+      break;
+  return string(a,i);
+}
+
 RC RM_FileScan::GetNextRec(RM_Record &rec){
   rec=RM_Record();//null
   while(1){
@@ -394,7 +522,7 @@ RC RM_FileScan::GetNextRec(RM_Record &rec){
     
     RC ret=rm_file_handle.GetRec(RID(this->current_page, this->current_slot), rec);
     bool flag=false;
-    Byte *mem=0;
+    const Byte *mem=0;
     if (ret==OK){
       RC ret=rec.GetData(mem);
       switch(attr_type){
@@ -404,7 +532,7 @@ RC RM_FileScan::GetNextRec(RM_Record &rec){
           memcpy(&op1, mem+attr_offset, attr_length);
           int op2=*(int*)value;
           if (_Validate(op1,op2))
-            flag=true;
+            flag=true; 
           break;
         }
 
@@ -419,7 +547,7 @@ RC RM_FileScan::GetNextRec(RM_Record &rec){
         }
 
       case STRING:
-        if (_Validate(std::string((char*)(mem+attr_offset), attr_length), std::string((char*)value, valueLength)))
+        if (_Validate(GenString((char*)(mem+attr_offset), attr_length), GenString((char*)value, valueLength)))
           flag=true;
         break;
 
@@ -429,7 +557,8 @@ RC RM_FileScan::GetNextRec(RM_Record &rec){
     }
 
     if (flag){
-      rec=RM_Record(mem, RID(this->current_page, this->current_slot));
+      rec=RM_Record(mem, rm_file_handle.GetRecordSize(), RID(this->current_page, this->current_slot));
+      this->current_slot++;
       return OK;
     }
     
@@ -458,8 +587,10 @@ RM_Manager::~RM_Manager(){
 }
 
 RC RM_Manager::CreateFile(const char *fileName, int record_size){
-  if (record_size> (8<<10)-96-10)
+  if (record_size> (8<<10)-96-10){
+    RM_PrintError(TOO_LONG_RECORD);
     return TOO_LONG_RECORD;
+  }
   RC ret=pfm.CreateFile(fileName);
   if (ret!=OK)
     return ret;
@@ -495,7 +626,7 @@ RC RM_Manager::CreateFile(const char *fileName, int record_size){
 }
 
 RC RM_Manager::DestroyFile(const char *fileName){
-  //to be constructed
+  remove(fileName);
   return OK;
 }
 
